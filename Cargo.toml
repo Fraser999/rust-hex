@@ -9,7 +9,7 @@ repository = "https://github.com/KokaKiwi/rust-hex"
 edition = "2018"
 
 [features]
-default = ["std"]
+default = ["std", "casperlabs-contract-ffi/std"]
 std = []
 
 [[bench]]
@@ -17,6 +17,10 @@ name = "hex"
 harness = false
 
 [dev-dependencies]
+base16 = "0.2"
+binascii = "0.1"
+casperlabs-contract-ffi = "0.19.0"
 criterion = "0.3"
-rustc-hex = "2.0"
 faster-hex = "0.4"
+rand = "0.7"
+rustc-hex = "2.0"

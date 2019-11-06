@@ -1,70 +1,130 @@
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{self, criterion_group, criterion_main, Criterion};
+use rand::RngCore;
 use rustc_hex::{FromHex, ToHex};
 
-const DATA: &[u8] = include_bytes!("../src/lib.rs");
+fn encode(criterion: &mut Criterion) {
+    let mut rng = rand::thread_rng();
+    let mut group = criterion.benchmark_group("encode");
+    for size in &[32usize, 1024, 65536] {
+        let mut data = vec![0u8; *size];
+        rng.fill_bytes(&mut data);
 
-fn bench_encode(c: &mut Criterion) {
-    c.bench_function("hex_encode", |b| b.iter(|| hex::encode(DATA)));
+        group.bench_with_input(format!("hex [{} bytes]", size), &data, |bencher, data| {
+            bencher.iter(|| criterion::black_box(hex::encode(data)))
+        });
 
-    c.bench_function("rustc_hex_encode", |b| b.iter(|| DATA.to_hex::<String>()));
+        group.bench_with_input(
+            format!("rustc_hex [{} bytes]", size),
+            &data,
+            |bencher, data| bencher.iter(|| criterion::black_box(data.to_hex::<String>())),
+        );
 
-    c.bench_function("faster_hex_encode", |b| {
-        b.iter(|| faster_hex::hex_string(DATA).unwrap())
-    });
+        group.bench_with_input(
+            format!("faster_hex [{} bytes]", size),
+            &data,
+            |bencher, data| {
+                bencher.iter(|| criterion::black_box(faster_hex::hex_string(data).unwrap()))
+            },
+        );
 
-    c.bench_function("faster_hex_encode_fallback", |b| {
-        b.iter(|| {
-            let mut dst = vec![0; DATA.len() * 2];
-            faster_hex::hex_encode_fallback(DATA, &mut dst);
-            dst
-        })
-    });
+        group.bench_with_input(
+            format!("base16 [{} bytes]", size),
+            &data,
+            |bencher, data| bencher.iter(|| criterion::black_box(base16::encode_lower(data))),
+        );
+
+        group.bench_with_input(
+            format!("binascii [{} bytes]", size),
+            &data,
+            |bencher, data| {
+                bencher.iter(|| {
+                    let mut output = vec![0; size * 2];
+                    binascii::bin2hex(data, &mut output).unwrap();
+                    criterion::black_box(output)
+                })
+            },
+        );
+
+        group.bench_with_input(
+            format!("casperlabs [{} bytes]", size),
+            &data,
+            |bencher, data| {
+                bencher.iter(|| {
+                    criterion::black_box(casperlabs_contract_ffi::base16::encode_lower(data))
+                })
+            },
+        );
+    }
 }
 
-fn bench_decode(c: &mut Criterion) {
-    c.bench_function("hex_decode", |b| {
-        let hex = hex::encode(DATA);
-        b.iter(|| hex::decode(&hex).unwrap())
-    });
+fn decode(criterion: &mut Criterion) {
+    let mut rng = rand::thread_rng();
+    let mut group = criterion.benchmark_group("decode");
 
-    c.bench_function("rustc_hex_decode", |b| {
-        let hex = DATA.to_hex::<String>();
-        b.iter(|| hex.from_hex::<Vec<u8>>().unwrap())
-    });
+    for size in &[32usize, 1024, 65536] {
+        let mut data = vec![0u8; *size];
+        rng.fill_bytes(&mut data);
+        let hex_data = faster_hex::hex_string(&data).unwrap();
 
-    c.bench_function("faster_hex_decode", move |b| {
-        let hex = faster_hex::hex_string(DATA).unwrap();
-        let len = DATA.len();
-        b.iter(|| {
-            let mut dst = Vec::with_capacity(len);
-            dst.resize(len, 0);
-            faster_hex::hex_decode(hex.as_bytes(), &mut dst).unwrap();
-            dst
-        })
-    });
+        group.bench_with_input(
+            format!("hex [{} bytes]", size),
+            &hex_data,
+            |bencher, hex_data| {
+                bencher.iter(|| criterion::black_box(hex::decode(hex_data).unwrap()))
+            },
+        );
 
-    c.bench_function("faster_hex_decode_unchecked", |b| {
-        let hex = faster_hex::hex_string(DATA).unwrap();
-        let len = DATA.len();
-        b.iter(|| {
-            let mut dst = Vec::with_capacity(len);
-            dst.resize(len, 0);
-            faster_hex::hex_decode_unchecked(hex.as_bytes(), &mut dst);
-            dst
-        })
-    });
+        group.bench_with_input(
+            format!("rustc_hex [{} bytes]", size),
+            &hex_data,
+            |bencher, hex_data| {
+                bencher.iter(|| criterion::black_box(hex_data.from_hex::<Vec<u8>>().unwrap()))
+            },
+        );
 
-    c.bench_function("faster_hex_decode_fallback", |b| {
-        let hex = faster_hex::hex_string(DATA).unwrap();
-        let len = DATA.len();
-        b.iter(|| {
-            let mut dst = Vec::with_capacity(len);
-            dst.resize(len, 0);
-            faster_hex::hex_decode_fallback(hex.as_bytes(), &mut dst);
-            dst
-        })
-    });
+        group.bench_with_input(
+            format!("faster_hex [{} bytes]", size),
+            &hex_data,
+            |bencher, hex_data| {
+                bencher.iter(|| {
+                    let mut output = vec![0u8; *size];
+                    faster_hex::hex_decode(hex_data.as_bytes(), &mut output).unwrap();
+                    criterion::black_box(output)
+                })
+            },
+        );
+
+        group.bench_with_input(
+            format!("base16 [{} bytes]", size),
+            &hex_data,
+            |bencher, hex_data| bencher.iter(|| criterion::black_box(base16::decode(hex_data).unwrap())),
+        );
+
+        group.bench_with_input(
+            format!("binascii [{} bytes]", size),
+            &hex_data,
+            |bencher, hex_data| {
+                bencher.iter(|| {
+                    let mut output = vec![0u8; *size];
+                    binascii::hex2bin(hex_data.as_bytes(), &mut output).unwrap();
+                    criterion::black_box(output)
+                })
+            },
+        );
+
+        group.bench_with_input(
+            format!("casperlabs [{} bytes]", size),
+            &hex_data,
+            |bencher, hex_data| {
+                bencher.iter(|| {
+                    criterion::black_box(
+                        casperlabs_contract_ffi::base16::decode_lower(hex_data).unwrap(),
+                    )
+                })
+            },
+        );
+    }
 }
 
-criterion_group!(benches, bench_encode, bench_decode);
+criterion_group!(benches, encode, decode);
 criterion_main!(benches);
